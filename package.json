@@ -1,0 +1,16 @@
+{
+  "name": "triangle-tenant-portal",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Triangle Tenant Portal — static front end + /api serverless functions backed by Postgres.",
+  "scripts": {
+    "migrate": "node scripts/migrate.js",
+    "seed": "node scripts/seed.js"
+  },
+  "dependencies": {
+    "pg": "^8.11.5"
+  },
+  "devDependencies": {
+    "dotenv": "^16.4.5"
+  }
+}
