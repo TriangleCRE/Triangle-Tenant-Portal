@@ -3,8 +3,9 @@
 // — api/_lib/db.js seeds automatically on first request against an empty
 // database — but it's here for local development and one-off ops use.
 //
-// Only ever inserts into `properties`, and only when it's completely
-// empty, so it can never overwrite real data.
+// Only ever inserts into `properties` and `users`, and only into
+// whichever of those is completely empty, so it can never overwrite
+// real data.
 //
 // Usage:
 //   DATABASE_URL=postgres://... node scripts/seed.js
@@ -37,10 +38,15 @@ async function main() {
   try {
     await createTables(client); // make sure tables exist before seeding
     const result = await seedIfEmpty(client);
-    if (result.seeded) {
-      console.log(`Seeded ${result.count} properties.`);
+    if (result.properties.seeded) {
+      console.log(`Seeded ${result.properties.count} properties.`);
     } else {
       console.log('"properties" already has data — left untouched.');
+    }
+    if (result.users.seeded) {
+      console.log(`Seeded ${result.users.count} demo users (see db/schema.js SEED_USERS for credentials).`);
+    } else {
+      console.log('"users" already has data — left untouched.');
     }
   } finally {
     client.release();

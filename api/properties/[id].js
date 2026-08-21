@@ -4,7 +4,8 @@ const { requireAuth } = require('../_lib/auth');
 const { ensureReady, getPool } = require('../_lib/db');
 
 module.exports = async (req, res) => {
-  if (!requireAuth(req, res)) return;
+  const user = requireAuth(req, res, ['staff']);
+  if (!user) return;
 
   const id = Number(req.query.id);
   if (!Number.isInteger(id)) {

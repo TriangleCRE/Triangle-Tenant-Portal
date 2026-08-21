@@ -8,6 +8,8 @@
 
 'use strict';
 
+const bcrypt = require('bcryptjs');
+
 // The property list that used to be hard-coded as `var PROPERTIES = [...]`
 // in index.html. Loaded once, only if the properties table is empty.
 const SEED_PROPERTIES = [
@@ -15,6 +17,39 @@ const SEED_PROPERTIES = [
   'Warehouse District — Staunton',
   '1854 E Market St — Harrisonburg',
   'Other / not listed',
+];
+
+// Three demo accounts, one per role, so the new login system can be
+// exercised right away. Change these passwords (or delete the accounts)
+// before this ever holds real tenant data.
+const SEED_USERS = [
+  {
+    email: 'tenant@demo.trianglecre.com',
+    password: 'TenantDemo123!',
+    role: 'tenant',
+    name: 'Jane Tenant',
+    company: 'Blue Ridge Coffee Co.',
+    property: 'Hoy Center — Staunton',
+    unit: 'Suite C',
+  },
+  {
+    email: 'staff@demo.trianglecre.com',
+    password: 'StaffDemo123!',
+    role: 'staff',
+    name: 'Alex Rivera',
+    company: null,
+    property: null,
+    unit: null,
+  },
+  {
+    email: 'maintenance@demo.trianglecre.com',
+    password: 'MaintDemo123!',
+    role: 'maintenance',
+    name: 'Sam Cooper',
+    company: null,
+    property: null,
+    unit: null,
+  },
 ];
 
 const CREATE_PROPERTIES_TABLE = `
@@ -41,6 +76,32 @@ const CREATE_SUBMISSIONS_TABLE = `
   );
 `;
 
+// Logins for the three roles the portal supports: tenants (submit their
+// own requests, no wide column schema needed — these fields are uniform
+// and small), Triangle staff (full back-office access), and maintenance
+// (work-order queue only).
+const CREATE_USERS_TABLE = `
+  CREATE TABLE IF NOT EXISTS users (
+    id SERIAL PRIMARY KEY,
+    email TEXT NOT NULL UNIQUE,
+    password_hash TEXT NOT NULL,
+    role TEXT NOT NULL CHECK (role IN ('tenant','staff','maintenance')),
+    name TEXT NOT NULL,
+    company TEXT,
+    property TEXT,
+    unit TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  );
+`;
+
+// Added after the fact for existing deployments — IF NOT EXISTS on both
+// the table and the columns keeps this safe to run against a database
+// that already has a `submissions` table from before logins existed.
+const ALTER_SUBMISSIONS_FOR_USERS = `
+  ALTER TABLE submissions ADD COLUMN IF NOT EXISTS user_id INTEGER REFERENCES users(id) ON DELETE SET NULL;
+  ALTER TABLE submissions ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'open';
+`;
+
 // Arbitrary fixed key for a Postgres advisory lock. Scopes schema
 // creation + seeding so that concurrent cold starts (or a script running
 // at the same time as a live request) never race to seed twice.
@@ -49,28 +110,47 @@ const ADVISORY_LOCK_KEY = 872341501;
 async function createTables(client) {
   await client.query(CREATE_PROPERTIES_TABLE);
   await client.query(CREATE_SUBMISSIONS_TABLE);
+  await client.query(CREATE_USERS_TABLE);
+  await client.query(ALTER_SUBMISSIONS_FOR_USERS);
 }
 
-// Only ever seeds `properties`. `submissions` starts empty on purpose —
-// there is no legitimate "seed" data for tenant requests, and an empty
-// table is a completely normal, healthy state for it.
+// Only ever seeds `properties` and `users`, and only the tables that are
+// completely empty — real edits (including someone deleting a demo
+// account) are never overwritten.
 async function seedIfEmpty(client) {
-  const { rows } = await client.query('SELECT count(*)::int AS n FROM properties');
-  if (rows[0].n > 0) {
-    return { seeded: false };
+  const result = { properties: { seeded: false }, users: { seeded: false } };
+
+  const props = await client.query('SELECT count(*)::int AS n FROM properties');
+  if (props.rows[0].n === 0) {
+    for (let i = 0; i < SEED_PROPERTIES.length; i++) {
+      await client.query(
+        'INSERT INTO properties (name, sort_order) VALUES ($1, $2) ON CONFLICT (name) DO NOTHING',
+        [SEED_PROPERTIES[i], i]
+      );
+    }
+    result.properties = { seeded: true, count: SEED_PROPERTIES.length };
   }
-  for (let i = 0; i < SEED_PROPERTIES.length; i++) {
-    await client.query(
-      'INSERT INTO properties (name, sort_order) VALUES ($1, $2) ON CONFLICT (name) DO NOTHING',
-      [SEED_PROPERTIES[i], i]
-    );
+
+  const users = await client.query('SELECT count(*)::int AS n FROM users');
+  if (users.rows[0].n === 0) {
+    for (const u of SEED_USERS) {
+      const passwordHash = bcrypt.hashSync(u.password, 10);
+      await client.query(
+        `INSERT INTO users (email, password_hash, role, name, company, property, unit)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
+         ON CONFLICT (email) DO NOTHING`,
+        [u.email, passwordHash, u.role, u.name, u.company, u.property, u.unit]
+      );
+    }
+    result.users = { seeded: true, count: SEED_USERS.length };
   }
-  return { seeded: true, count: SEED_PROPERTIES.length };
+
+  return result;
 }
 
 // The one function the live site depends on: idempotent, safe to call on
-// every request. Creates tables if missing, and seeds `properties` only
-// if it is completely empty — real edits are never overwritten.
+// every request. Creates tables if missing, and seeds each table only if
+// it is completely empty — real edits are never overwritten.
 async function ensureSchemaAndSeed(pool) {
   const client = await pool.connect();
   try {
@@ -88,6 +168,7 @@ async function ensureSchemaAndSeed(pool) {
 
 module.exports = {
   SEED_PROPERTIES,
+  SEED_USERS,
   ADVISORY_LOCK_KEY,
   createTables,
   seedIfEmpty,
