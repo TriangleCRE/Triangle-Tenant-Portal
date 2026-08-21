@@ -4,7 +4,10 @@ const { requireAuth } = require('../_lib/auth');
 const { ensureReady, getPool } = require('../_lib/db');
 
 module.exports = async (req, res) => {
-  if (!requireAuth(req, res)) return;
+  // Any logged-in role can read the list (it feeds the request-form
+  // dropdowns); only Triangle staff can add to it.
+  const user = requireAuth(req, res, req.method === 'GET' ? undefined : ['staff']);
+  if (!user) return;
 
   try {
     await ensureReady();
