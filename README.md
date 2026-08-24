@@ -95,6 +95,13 @@ npm run seed            # seed `properties` and `users` if empty
 | `DATABASE_URL` (or `POSTGRES_URL`) | Postgres connection string. Set automatically by Vercel's Neon Postgres storage integration in production. |
 | `SESSION_SECRET` | Signs login session cookies. Defaults to a fixed dev value if unset — set a real random value in production (`openssl rand -base64 32`). |
 
+> **Note:** Vercel snapshots environment variables into a deployment at
+> build time. If you add, change, or connect an env var (e.g. linking the
+> Neon integration) after a deployment already exists, that deployment
+> keeps using the old values — it will **not** pick up the change until
+> you create a new deployment (push a commit, or use "Redeploy" in the
+> Vercel dashboard).
+
 ## API
 
 Every route below requires a logged-in session (the cookie set by

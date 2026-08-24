@@ -522,9 +522,16 @@
       await enterApp();
     } catch(e){
       CURRENT_USER = null;
-      err.textContent = (e.status === 401)
-        ? "That email or password isn't right. Try again."
-        : "Couldn't reach the server. Please try again.";
+      if(e.status === 401){
+        err.textContent = "That email or password isn't right. Try again.";
+      } else if(e.status){
+        // The server responded but with an error (e.g. a 500) — this is
+        // a real problem on our end, not a network hiccup, so say so
+        // rather than implying the user should just retry a bad network.
+        err.textContent = "Something went wrong on our end. Please try again in a moment, or let your property manager know if this keeps happening.";
+      } else {
+        err.textContent = "Couldn't reach the server. Check your connection and try again.";
+      }
       pwInput.focus();
     } finally {
       btn.disabled = false;
